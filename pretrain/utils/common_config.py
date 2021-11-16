@@ -79,14 +79,15 @@ def get_model(p):
                                                 p['model_kwargs']['use_classification_head'])
 
 
-def get_train_dataset(p, transform=None):
+def get_train_dataset(p, transform=None, data_name='trainaug'):
     if p['train_db_name'] == 'VOCSegmentation':
         from data.dataloaders.pascal_voc import VOCSegmentation
         print('get_train_dataset():', p['train_db_name'])
         print('get_train_dataset():', Path.db_root_dir(p['train_db_name']))
         return VOCSegmentation(root=Path.db_root_dir(p['train_db_name']),
                             saliency=p['train_db_kwargs']['saliency'],
-                            transform=transform)
+                            transform=transform,
+                            data_name=data_name)
     
     else:    
         raise ValueError('Invalid train db name {}'.format(p['train_db_name']))   

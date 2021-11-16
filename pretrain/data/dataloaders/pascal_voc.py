@@ -25,12 +25,12 @@ class VOCSegmentation(data.Dataset):
 
     def __init__(self, root=Path.db_root_dir('VOCSegmentation'),
                  saliency='supervised_model', download=True,
-                 transform=None, overfit=False):
+                 transform=None, overfit=False, data_name='trainaug'):
         super(VOCSegmentation, self).__init__()
 
         print(Path.db_root_dir('VOCSegmentation'))
         print(root)
-        print(os.path.join(root, 'sets/trainaug.txt'))
+        print(os.path.join(root, 'sets/{}.txt'.format(data_name)))
         self.root = root
         self.transform = transform
 
@@ -49,7 +49,7 @@ class VOCSegmentation(data.Dataset):
         self.sims = []
         self.sim_ids = []
 
-        with open(os.path.join(self.root, 'sets/trainaug.txt'), 'r') as f:
+        with open(os.path.join(self.root, 'sets/{}.txt'.format(data_name)), 'r') as f:
             all_ = f.read().splitlines()
 
         with open(os.path.join(Path.db_root_dir(), 'pascal_img_info'), 'r') as f:
