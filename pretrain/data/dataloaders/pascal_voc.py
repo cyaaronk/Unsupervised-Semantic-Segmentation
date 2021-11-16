@@ -10,6 +10,7 @@ import glob
 import tarfile
 import numpy as np
 import torch.utils.data as data
+from tqdm import tqdm
 
 from data.util.mypath import Path
 from data.util.google_drive import download_file_from_google_drive
@@ -64,20 +65,23 @@ class VOCSegmentation(data.Dataset):
         print(list(self.img2sim.items())[:10])
 
         self.img2idx = dict()
-        for f in all_:
+        img2label_keys = list(self.img2label.keys())
+        img2sim_keys = list(self.img2sim.keys())
+        for f in tqdm(all_):
             _image = os.path.join(self.images_dir, f + ".jpg")
             _sal = os.path.join(self.sal_dir, f + ".png")
             if os.path.isfile(_image) and os.path.isfile(_sal):
-                if f not in list(self.img2label.keys()) or f not in list(self.img2sim.keys()):
+                if f not in img2label_keys or f not in img2sim_keys:
                     continue
                 self.img2idx[f] = len(self.images)
                 self.images.append(_image)
                 self.sal.append(_sal)
                 self.labels.append(self.img2label[f])
                 self.sims.append(self.img2sim[f])
-        img2idx_keys = list(self.img2idx.keys())
-        for fs in self.sims:
-            self.sim_ids.append(tuple([self.img2idx[t] for t in fs if t in img2idx_keys]))
+        img2idx_keys = set(self.img2idx.keys())
+        for fs in tqdm(self.sims):
+            self.sim_ids.append(tuple([self.img2idx[t] for t in img2idx_keys.intersection(fs)]))
+            #self.sim_ids.append(tuple([self.img2idx[t] for t in fs if t in img2idx_keys]))
         print(list(self.img2idx.items())[:10])
         print(self.labels[:10])
         print(self.sims[:10])
