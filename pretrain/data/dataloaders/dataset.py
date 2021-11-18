@@ -58,7 +58,7 @@ class Dataset(data.Dataset):
 
 class DatasetKeyQuery(data.Dataset):
     def __init__(self, base_dataset, transform, downsample_sal=False,
-                    scale_factor_sal=0.125, min_area=0.01, max_area=0.99):
+                    scale_factor_sal=0.125, min_area=0.01, max_area=0.99, labelled_positive=False):
         super(DatasetKeyQuery, self).__init__()
         self.base_dataset = base_dataset
         self.transform = transform
@@ -71,6 +71,8 @@ class DatasetKeyQuery(data.Dataset):
 
         self.min_area = min_area
         self.max_area = max_area
+
+        self.labelled_positive = labelled_positive
 
     def __len__(self):
         return len(self.base_dataset) 
@@ -92,8 +94,8 @@ class DatasetKeyQuery(data.Dataset):
                 key_sample_ = self.base_dataset.__getitem__(random.choice(self.base_dataset.sim_ids[rdm_idx])) if len(self.base_dataset.sim_ids[rdm_idx]) > 0 else sample_
                 count = 100
  
-            key_sample = self.transform(deepcopy(sample_))
-            query_sample = self.transform(deepcopy(key_sample_))
+            key_sample = self.transform(deepcopy(key_sample_)) if self.labelled_positive else self.transform(deepcopy(sample_))
+            query_sample = self.transform(deepcopy(sample_))
                            
             if self.downsample_sal: # Downsample
                 key_sample['sal'] = interpolate(key_sample['sal'][None,None,:,:].float(),
