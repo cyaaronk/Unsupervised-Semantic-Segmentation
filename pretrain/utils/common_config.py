@@ -79,7 +79,7 @@ def get_model(p):
                                                 p['model_kwargs']['use_classification_head'])
 
 
-def get_train_dataset(p, transform=None, data_name='trainaug'):
+def get_train_dataset(p, transform=None, data_name='trainaug', single_label=False):
     if p['train_db_name'] == 'VOCSegmentation':
         from data.dataloaders.pascal_voc import VOCSegmentation
         print('get_train_dataset():', p['train_db_name'])
@@ -87,7 +87,8 @@ def get_train_dataset(p, transform=None, data_name='trainaug'):
         return VOCSegmentation(root=Path.db_root_dir(p['train_db_name']),
                             saliency=p['train_db_kwargs']['saliency'],
                             transform=transform,
-                            data_name=data_name)
+                            data_name=data_name,
+                            single_label=single_label)
     
     else:    
         raise ValueError('Invalid train db name {}'.format(p['train_db_name']))   
@@ -99,18 +100,27 @@ def get_train_dataloader(p, dataset):
             drop_last=True, shuffle=True)
 
 
-def get_train_transformations():
-    augmentation = [
-        transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
-        torchvision.transforms.RandomApply([
-            transforms.ColorJitter([0.4, 0.4, 0.4, 0.1])
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-    ]
+def get_train_transformations(augment_level='default'):
+    if augment_level == 'default':
+        augmentation = [
+            transforms.RandomResizedCrop(224, scale=(0.2, 1.)),
+            torchvision.transforms.RandomApply([
+                transforms.ColorJitter([0.4, 0.4, 0.4, 0.1])
+            ], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+        ]
+
+    elif augment_level == 'none':
+        augmentation = [
+            transforms.RandomResizedCrop(224, scale=(1., 1.)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+        ]
 
     return torchvision.transforms.Compose(augmentation)
 

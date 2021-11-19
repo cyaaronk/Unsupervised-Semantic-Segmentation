@@ -96,7 +96,7 @@ class DatasetKeyQuery(data.Dataset):
  
             key_sample = self.transform(deepcopy(key_sample_)) if self.labelled_positive else self.transform(deepcopy(sample_))
             query_sample = self.transform(deepcopy(sample_))
-                           
+                       
             if self.downsample_sal: # Downsample
                 key_sample['sal'] = interpolate(key_sample['sal'][None,None,:,:].float(),
                                             scale_factor=self.scale_factor_sal, mode='nearest').squeeze().long()

@@ -35,7 +35,7 @@ def create_config(config_file_env, config_file_exp):
         cfg[k] = v
 
     # Set paths
-    output_dir = os.path.join(root_dir, os.path.basename(config_file_exp).split('.')[0])
+    output_dir = os.path.join(root_dir, 'default_model_dir')
     mkdir_if_missing(output_dir)
     cfg['output_dir'] = output_dir
     cfg['checkpoint'] = os.path.join(cfg['output_dir'], 'checkpoint.pth.tar')

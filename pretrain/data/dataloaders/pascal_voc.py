@@ -26,7 +26,7 @@ class VOCSegmentation(data.Dataset):
 
     def __init__(self, root=Path.db_root_dir('VOCSegmentation'),
                  saliency='supervised_model', download=True,
-                 transform=None, overfit=False, data_name='trainaug'):
+                 transform=None, overfit=False, data_name='trainaug', single_label=False):
         super(VOCSegmentation, self).__init__()
 
         print(Path.db_root_dir('VOCSegmentation'))
@@ -34,6 +34,8 @@ class VOCSegmentation(data.Dataset):
         print(os.path.join(root, 'sets/{}.txt'.format(data_name)))
         self.root = root
         self.transform = transform
+
+        self.single_label = single_label
 
         if download:
             self._download()
@@ -73,6 +75,8 @@ class VOCSegmentation(data.Dataset):
             if os.path.isfile(_image) and os.path.isfile(_sal):
                 if f not in img2label_keys or f not in img2sim_keys:
                     continue
+                if self.single_label and len(self.img2label[f]) > 1:
+                    continue
                 self.img2idx[f] = len(self.images)
                 self.images.append(_image)
                 self.sal.append(_sal)
@@ -107,6 +111,7 @@ class VOCSegmentation(data.Dataset):
             sample = self.transform(sample)
         
         sample['meta'] = {'image': str(self.images[index])}
+        sample['label'] = self.labels[index]
 
         return sample 
 

@@ -15,7 +15,7 @@ from utils.common_config import get_model
 from modules.losses import BalancedCrossEntropyLoss
 
 class ContrastiveModel(nn.Module):
-    def __init__(self, p):
+    def __init__(self, p, labelled_negative=False):
         """
         p: configuration dict
         """
@@ -24,6 +24,8 @@ class ContrastiveModel(nn.Module):
         self.K = p['moco_kwargs']['K'] 
         self.m = p['moco_kwargs']['m'] 
         self.T = p['moco_kwargs']['T']
+
+        self.labelled_negative = labelled_negative
 
         # create the model 
         self.model_q = get_model(p)
@@ -36,6 +38,7 @@ class ContrastiveModel(nn.Module):
         # create the queue
         self.dim = p['model_kwargs']['ndim']
         self.register_buffer("queue", torch.randn(self.dim, self.K))
+        self.register_buffer("queue_lbl", torch.randn(self.K))
         self.queue = nn.functional.normalize(self.queue, dim=0)
 
         self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
@@ -52,7 +55,7 @@ class ContrastiveModel(nn.Module):
             param_k.data = param_k.data * self.m + param_q.data * (1. - self.m)
 
     @torch.no_grad()
-    def _dequeue_and_enqueue(self, keys):
+    def _dequeue_and_enqueue(self, keys, key_labels):
         # gather keys before updating queue
         keys = concat_all_gather(keys)
 
@@ -63,6 +66,7 @@ class ContrastiveModel(nn.Module):
 
         # replace the keys at ptr (dequeue and enqueue)
         self.queue[:, ptr:ptr + batch_size] = keys.T
+        self.queue_lbl[ptr:ptr + batch_size] = key_labels
         ptr = (ptr + batch_size) % self.K  # move pointer
 
         self.queue_ptr[0] = ptr
@@ -114,7 +118,7 @@ class ContrastiveModel(nn.Module):
 
         return x_gather[idx_this]
 
-    def forward(self, im_q, im_k, sal_q, sal_k):
+    def forward(self, im_q, im_k, sal_q, sal_k, im_q_label):
         """
         Input:
             images: a batch of images (B x 3 x H x W) 
@@ -127,13 +131,15 @@ class ContrastiveModel(nn.Module):
         q, q_bg = self.model_q(im_q)         # queries: B x dim x H x W
         q = nn.functional.normalize(q, dim=1)
         q = q.permute((0, 2, 3, 1))          # queries: B x H x W x dim 
+        batch_q = torch.reshape(q, [q.shape[0], -1, self.dim]) # queries: B x H.W x dim
         q = torch.reshape(q, [-1, self.dim]) # queries: pixels x dim
 
         # compute saliency loss
         sal_loss = self.bce(q_bg, sal_q)
    
         with torch.no_grad():
-            offset = torch.arange(0, 2 * batch_size, 2).to(sal_q.device)
+            #offset = torch.arange(0, 2 * batch_size, 2).to(sal_q.device)
+            offset = torch.zeros(batch_size).long().to(sal_q.device)
             sal_q = (sal_q + torch.reshape(offset, [-1, 1, 1]))*sal_q # all bg's to 0
             sal_q = sal_q.view(-1)
             mask_indexes = torch.nonzero((sal_q)).view(-1).squeeze()
@@ -156,14 +162,40 @@ class ContrastiveModel(nn.Module):
             k = k.reshape(batch_size, self.dim, -1) # B x dim x H.W
             sal_k = sal_k.reshape(batch_size, -1, 1).type(k.dtype) # B x H.W x 1
             prototypes_foreground = torch.bmm(k, sal_k).squeeze() # B x dim
-            prototypes = nn.functional.normalize(prototypes_foreground, dim=1)        
+            prototypes = nn.functional.normalize(prototypes_foreground, dim=1)
+            prototypes = prototypes.contiguous().view(batch_size, self.dim, 1) # B x dim x 1     
 
         # q: pixels x dim
         # k: pixels x dim
         # prototypes_k: proto x dim
         q = torch.index_select(q, index=mask_indexes, dim=0)
-        l_batch = torch.matmul(q, prototypes.t())   # shape: pixels x proto
+        #l_batch = torch.matmul(q, prototypes.t())   # shape: pixels x proto
+        l_batch = torch.matmul(batch_q, prototypes)   # shape: batch x H.W x 1
+        l_batch = torch.index_select(l_batch.view([-1, 1]), index=mask_indexes, dim=0)  # shape: pixels x proto
         negatives = self.queue.clone().detach()     # shape: dim x negatives
+        negative_labels = self.queue_lbl.clone().detach()
+        pointer = int(self.queue_ptr.clone().detach())
+        with torch.no_grad():
+#             print(im_q)
+#             print('Negatives:', negatives)
+#             print('Label Queue', self.queue_lbl)
+#             print('Current Label', im_q_label)
+            if self.labelled_negative:
+                for label in self.queue_lbl:
+                    if label in im_q_label:
+                        label_index = (negative_labels == label).nonzero(as_tuple=True)[0][0]
+                        negative_labels = torch.cat([negative_labels[0:label_index], negative_labels[label_index+1:]])
+                        negatives = torch.cat([negatives[:, 0:label_index], negatives[:, label_index+1:]], dim=1)
+                        if label_index <= pointer:
+                            pointer -= 1
+            if negatives.size()[1] > int(self.K / 2):
+                print('Queue_PTR:', pointer + 1, '|', 'Current Size:', negatives.size()[1])
+                if pointer + 1 >= int(self.K / 2):
+                    negatives = negatives[:, pointer + 1 - int(self.K / 2) : pointer + 1]
+                else:
+                    negatives = torch.cat([negatives[:, 0 : pointer + 1], negatives[:, negatives.size()[1] - (int(self.K / 2) - pointer - 1):]], dim=1)
+            print('Negatives Shape:', negatives.size())
+        
         l_mem = torch.matmul(q, negatives)          # shape: pixels x negatives (Memory bank)
         logits = torch.cat([l_batch, l_mem], dim=1) # pixels x (proto + negatives)
 
@@ -171,7 +203,7 @@ class ContrastiveModel(nn.Module):
         logits /= self.T
 
         # dequeue and enqueue
-        self._dequeue_and_enqueue(prototypes) 
+        self._dequeue_and_enqueue(prototypes, im_q_label) 
 
         return logits, sal_q, sal_loss
 

@@ -24,11 +24,12 @@ def train(p, train_loader, model, optimizer, epoch, amp):
     for i, batch in enumerate(train_loader):
         # Forward pass
         im_q = batch['query']['image'].cuda(p['gpu'], non_blocking=True)
+        im_q_labels = batch['query']['label'][0].cuda(p['gpu'], non_blocking=True)
         im_k = batch['key']['image'].cuda(p['gpu'], non_blocking=True)
         sal_q = batch['query']['sal'].cuda(p['gpu'], non_blocking=True)
         sal_k = batch['key']['sal'].cuda(p['gpu'], non_blocking=True)
 
-        logits, labels, saliency_loss = model(im_q=im_q, im_k=im_k, sal_q=sal_q, sal_k=sal_k)
+        logits, labels, saliency_loss = model(im_q=im_q, im_k=im_k, sal_q=sal_q, sal_k=sal_k, im_q_label=im_q_labels)
 
         # Use E-Net weighting for calculating the pixel-wise loss.
         uniq, freq = torch.unique(labels, return_counts=True)
@@ -45,7 +46,8 @@ def train(p, train_loader, model, optimizer, epoch, amp):
         saliency_losses.update(saliency_loss.item())
         losses.update(loss.item())
 
-        acc1, acc5 = accuracy(logits, labels, topk=(1, 5))
+        #acc1, acc5 = accuracy(logits, labels, topk=(1, 5))
+        acc1 = accuracy(logits, labels, topk=(1,)); acc5 = [0.0]
         top1.update(acc1[0], im_q.size(0))
         top5.update(acc5[0], im_q.size(0))
         
@@ -75,4 +77,8 @@ def accuracy(output, target, topk=(1,)):
     for k in topk:
         correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
         res.append(correct_k.mul_(100.0 / batch_size))
+
+    if len(res) == 1:
+        res = res[0]
+        
     return res
